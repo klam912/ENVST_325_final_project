@@ -9,7 +9,10 @@ nih <- read.csv("Desktop/ENVST325/final_project/ENVST_325_final_project/data_rep
 
 # Skinny down data to only include TX, CA, and VA
 data_centers_needed_states <- data_centers %>%
-  filter(state_abb == c("CA", "TX", "VA"))
+  filter(state_abb %in% c("CA", "TX", "VA"))
+
+eji_needed_states <- eji %>%
+  filter(STATEABBR %in% c("CA", "TX", "VA"))
 
 Loudon_VA <- data_centers %>% filter(county=="Loudoun County")
 plot(VA$lon, VA$lat, xlab="Longitude", ylab="Latitude", main="Data Centers in Loudoun County, VA")
@@ -24,7 +27,7 @@ plot(VA$lon, VA$lat, xlab="Longitude", ylab="Latitude", main="Data Centers in Lo
 # California
 # Read in Shapefile
 CA_data_centers <- subset(data_centers_needed_states, state_abb == "CA")
-CA_shapefile <- st_read("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2024_06_tract/tl_2024_06_tract.shp")
+CA_shapefile <- st_read("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_06_tract/tl_2020_06_tract.shp")
 # Convert data_Centers into shp
 data_centers_CA_shp <- st_as_sf(CA_data_centers, coords = c("lon", "lat"), crs=4326)
 data_centers_CA_shp1 <- st_transform(data_centers_CA_shp, crs=4269)
@@ -35,7 +38,7 @@ data_centers_CA_final <- st_join(data_centers_CA_shp1, CA_shapefile)
 # Texas
 # Read in Shapefile
 TX_data_centers <- subset(data_centers_needed_states, state_abb == "TX")
-TX_shapefile <- st_read("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2024_48_tract/tl_2024_48_tract.shp")
+TX_shapefile <- st_read("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_48_tract/tl_2020_48_tract.shp")
 # Convert data_Centers into shp
 data_centers_TX_shp <- st_as_sf(TX_data_centers, coords = c("lon", "lat"), crs=4326)
 data_centers_TX_shp1 <- st_transform(data_centers_TX_shp, crs=4269)
@@ -44,7 +47,7 @@ data_centers_TX_shp1 <- st_transform(data_centers_TX_shp, crs=4269)
 data_centers_TX_final <- st_join(data_centers_TX_shp1, TX_shapefile)
 # Virginia
 VA_data_centers <- subset(data_centers_needed_states, state_abb == "VA")
-VA_shapefile <- st_read("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2024_51_tract/tl_2024_51_tract.shp")
+VA_shapefile <- st_read("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_51_tract/tl_2020_51_tract.shp")
 # Convert data_Centers into shp
 data_centers_VA_shp <- st_as_sf(VA_data_centers, coords = c("lon", "lat"), crs=4326)
 data_centers_VA_shp1 <- st_transform(data_centers_VA_shp, crs=4269)
@@ -56,9 +59,16 @@ data_centers_VA_final <- st_join(data_centers_VA_shp1, VA_shapefile)
 # stack them up and join with EJI on GEOID
 data_centers_CA_TX_VA <- rbind(data_centers_CA_final,data_centers_TX_final,data_centers_VA_final)
 
-# Left join with EJI on GEOID so investigate how because GEOID is more reliable
-data_centers_eji_final_test <- left_join(data_centers_CA_TX_VA, eji, by=c("GEOIDFQ"="AFFGEOID"))
+# Trim whitespace before joining
+data_centers_CA_TX_VA <- data_centers_CA_TX_VA %>% mutate(GEOID = trimws(GEOID))
+eji_needed_states <- eji_needed_states %>% mutate(GEOID_2020 = trimws(GEOID_2020))
+data_centers_CA_TX_VA$GEOID <- as.character(data_centers_CA_TX_VA$GEOID)
+eji_needed_states$GEOID_2020 <- as.character(eji_needed_states$GEOID_2020)
 
-data_centers_eji_final <- merge(data_centers_CA_TX_VA, eji, by="TRACTCE", all.x=TRUE)
+# Left join with EJI on GEOID so investigate how because GEOID is more reliable
+data_centers_eji_final <- data_centers_CA_TX_VA %>%
+  left_join(eji_needed_states, by = c("GEOID" = "GEOID_2020"))
+
+data_centers_eji_final_no_na <- na.omit(data_centers_eji_final)
 
 # Make sure to clean up the EJI part where there's -999 before analysis
