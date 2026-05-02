@@ -5,7 +5,6 @@ library(sf)
 # Download datasets
 data_centers <- read.csv("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/im3_open_source_data_center_atlas_v2026.02.09/im3_open_source_data_center_atlas_v2026.02.09.csv")
 eji <- read.csv("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/EJI_2024_United_States_CSV/EJI_2024_United_States.csv")
-nih <- read.csv("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/NIH/HDPulse_data_export.csv")
 
 # Skinny down data to only include TX, CA, and VA
 data_centers_needed_states <- data_centers %>%
@@ -165,6 +164,8 @@ data_centers_cleaned <- data_centers_final %>%
   mutate(across(where(is.atomic), ~ ifelse(.x %in% c("-999", -999, "9", 9), NA, .x)))
 
 # Analysis ----
+# NOTE: INTPTLAT and INTPTLON are the center coordinates of the Census tracts while
+# geometry stores the coordinates of the individual data centers.
 
 
 
