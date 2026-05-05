@@ -585,7 +585,7 @@ for (state_code in names(focus_areas)) {
         theme(panel.grid = element_blank())
       
       # E. Save the Map
-      file_name <- paste0("Map_", state_code, "_", county_name, "_", mod_label, ".png")
+      file_name <- paste0("Desktop/ENVST325/final_project/ENVST_325_final_project/viz/Map_", state_code, "_", county_name, "_", mod_label, ".png")
       ggsave(file_name, plot = p, width = 8, height = 6, dpi = 300, bg = "white")
       
       message(paste("Saved:", file_name))
