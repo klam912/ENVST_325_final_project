@@ -168,7 +168,7 @@ data_centers_cleaned <- data_centers_final %>%
 
 # Calculate total number of data centers per county in VA and TX
 total_data_centers_per_county <- data_centers_cleaned %>%
-  group_by(state_abb, county, operator) %>%
+  group_by(state_abb, county) %>%
   summarise(
     total = n()
   )
@@ -464,3 +464,131 @@ create_zoomed_map <- function(state_abbr, eji_var, map_data, dc_data, var_label)
 # Example 1: Texas - Unemployment Percentile
 tx_unemp_map <- create_zoomed_map("TX", "EPL_UNEMP", TX_map_data, data_centers_cleaned, "Unemployment Percentile Ranking")
 print(tx_unemp_map)
+
+# Regional map ----
+create_regional_map <- function(state_abbr, eji_var, map_data, dc_data, var_label, manual_limits = NULL) {
+  
+  centers_sub <- dc_data %>% filter(state_abb == state_abbr)
+  
+  # Default logic: auto-zoom to data centers
+  if (is.null(manual_limits)) {
+    bbox <- st_bbox(centers_sub)
+    x_range <- as.numeric(bbox["xmax"] - bbox["xmin"])
+    y_range <- as.numeric(bbox["ymax"] - bbox["ymin"])
+    pad_x <- if(x_range == 0) 0.25 else x_range * 0.15
+    pad_y <- if(y_range == 0) 0.25 else y_range * 0.15
+    
+    xlims <- c(bbox["xmin"] - pad_x, bbox["xmax"] + pad_x)
+    ylims <- c(bbox["ymin"] - pad_y, bbox["ymax"] + pad_y)
+  } else {
+    # Use user-provided limits: c(xmin, xmax, ymin, ymax)
+    xlims <- c(manual_limits[1], manual_limits[2])
+    ylims <- c(manual_limits[3], manual_limits[4])
+  }
+  
+  p <- ggplot() +
+    geom_sf(data = map_data, aes(fill = .data[[eji_var]]), color = "white", linewidth = 0.05) +
+    geom_sf(data = st_union(map_data), fill = NA, color = "black", linewidth = 0.6) +
+    geom_sf(data = centers_sub, color = "black", fill = "cyan", shape = 21, size = 3, stroke = 1) +
+    coord_sf(xlim = xlims, ylim = ylims, expand = FALSE) +
+    scale_fill_viridis_c(option = "magma", name = "Percentile", limits = c(0, 1)) +
+    labs(title = paste("Regional Focus:", var_label), subtitle = state_abbr) +
+    theme_minimal()
+  
+  return(p)
+}
+
+# Regions to focus on:
+# VA: Loudoun, Prince William, Fairfax, Henrico
+# TX: Bexar, Dallas, Travis, Ellis, Collin
+
+# Focusing specifically on Dallas, TX
+# manual_limits = c(longitude_min, longitude_max, latitude_min, latitude_max)
+dallas_limits <- c(-97.3, -96.5, 32.5, 33.1)
+
+dallas_map <- create_regional_map("TX", "RPL_EBM", TX_map_data, data_centers_cleaned, 
+                                  "Environmental Burden", manual_limits = dallas_limits)
+print(dallas_map)
+
+
+
+
+# 1. Define the focus regions and modules
+focus_areas <- list(
+  "VA" = c("Loudoun County", "Prince William County", "Fairfax County", "Henrico County"),
+  "TX" = c("Bexar County", "Dallas County", "Travis County", "Ellis County", "Collin County")
+)
+
+modules <- c(
+  "RPL_SVM" = "Social_Vulnerability", 
+  "RPL_EBM" = "Environmental_Burden", 
+  "RPL_CBM" = "Climate_Vulnerability"
+)
+
+# 2. Ensure data is joined (assuming TX_joined and VA_joined exist from previous steps)
+# If not yet joined, run the join code from the previous response first.
+state_data_list <- list("TX" = TX_map_data, "VA" = VA_map_data)
+
+# 3. The Nested Loop
+for (state_code in names(focus_areas)) {
+  
+  # Get the joined map data for this state
+  full_state_map <- state_data_list[[state_code]]
+  
+  for (county_name in focus_areas[[state_code]]) {
+    
+    # A. Filter tracts just for this specific county to define the zoom
+    # Note: EJI usually stores county names in all caps or Title Case. 
+    # We use grepl or tolower for a more flexible match.
+    county_tracts <- full_state_map %>% 
+      filter(tolower(COUNTY) == tolower(county_name))
+    
+    # Skip if county not found in data
+    if (nrow(county_tracts) == 0) {
+      warning(paste("County not found:", county_name, "in", state_code))
+      next
+    }
+    
+    # B. Calculate Bounding Box for the county zoom
+    bbox <- st_bbox(county_tracts)
+    
+    # C. Filter data centers just for this state/county
+    # We use st_intersection to only show centers inside our current zoom window
+    centers_in_county <- data_centers_cleaned %>%
+      filter(state_abb == state_code) %>%
+      st_crop(bbox) # Keeps only data centers within the county view
+    
+    for (mod_code in names(modules)) {
+      mod_label <- modules[[mod_code]]
+      
+      # D. Create the Map
+      p <- ggplot() +
+        # Plot tracts for the whole state (so we see neighbors) but fill by module
+        geom_sf(data = full_state_map, aes(fill = .data[[mod_code]]), color = "white", linewidth = 0.1) +
+        
+        # Plot data centers
+        geom_sf(data = centers_in_county, color = "black", fill = "cyan", shape = 21, size = 4, stroke = 1.2) +
+        
+        # Zoom to the county
+        coord_sf(xlim = c(bbox["xmin"], bbox["xmax"]), 
+                 ylim = c(bbox["ymin"], bbox["ymax"]), 
+                 expand = TRUE) +
+        
+        # Styling
+        scale_fill_viridis_c(option = "magma", name = "Percentile", limits = c(0, 1), na.value = "grey90") +
+        labs(
+          title = paste(county_name, "County:", gsub("_", " ", mod_label)),
+          subtitle = paste("State:", state_code, "| Data Center Locations"),
+          caption = "Data: CDC EJI 2024 & IM3 Atlas"
+        ) +
+        theme_minimal() +
+        theme(panel.grid = element_blank())
+      
+      # E. Save the Map
+      file_name <- paste0("Map_", state_code, "_", county_name, "_", mod_label, ".png")
+      ggsave(file_name, plot = p, width = 8, height = 6, dpi = 300, bg = "white")
+      
+      message(paste("Saved:", file_name))
+    }
+  }
+}
