@@ -16,11 +16,6 @@ data_centers_needed_states <- data_centers %>%
 eji_needed_states <- eji %>%
   filter(STATEABBR %in% c("CA", "TX", "VA"))
 
-# PROBLEM: EJI is at a Census tract level (multiple per county) while data_centers
-# is in county level
-# SOLUTION: keep it at a Census tract level and go to Census to get the 
-# spatial information about each Census tract
-
 # Download the 3 states Shapefiles and use sf for spatial join
 # California
 # Read in Shapefile
@@ -32,6 +27,8 @@ data_centers_CA_shp1 <- st_transform(data_centers_CA_shp, crs=4269)
 
 
 data_centers_CA_final <- st_join(data_centers_CA_shp1, CA_shapefile)
+data_centers_CA_final <- data_centers_CA_final %>%
+  mutate(GEOID = sub("^0", "", trimws(GEOID)))
 
 # Texas
 # Read in Shapefile
@@ -62,6 +59,7 @@ data_centers_CA_TX_VA <- data_centers_CA_TX_VA %>% mutate(GEOID = trimws(GEOID))
 eji_needed_states <- eji_needed_states %>% mutate(GEOID_2020 = trimws(GEOID_2020))
 data_centers_CA_TX_VA$GEOID <- as.character(data_centers_CA_TX_VA$GEOID)
 eji_needed_states$GEOID_2020 <- as.character(eji_needed_states$GEOID_2020)
+# Get rid of the first 0 in the GEOID for only CA so that they can match up with that of the EJI
 
 # Left join with EJI on GEOID
 data_centers_eji_final <- data_centers_CA_TX_VA %>%
@@ -218,10 +216,36 @@ ggplot(plot_data, aes(x = Module, y = Percentile, fill = state_abb)) +
 
 
 # Plot map ----
-# 1. Prepare Boundaries safely
+# 0. Prepare Boundaries safely
 # We wrap st_union in st_as_sf to ensure it remains a valid spatial object
 tx_outline <- if(exists("TX_shapefile")) st_as_sf(st_union(TX_shapefile)) else NULL
 va_outline <- if(exists("VA_shapefile")) st_as_sf(st_union(VA_shapefile)) else NULL
+ca_outline <- if(exists("CA_shapefile")) st_as_sf(st_union(CA_shapefile)) else NULL
+# 1. CA Map
+if (!is.null(ca_outline)) {
+  ca_map <- ggplot() +
+    # Draw census tracts
+    geom_sf(data = CA_shapefile, 
+            fill = "gray98", 
+            color = "gray80", 
+            linewidth = 0.1) + # Use 'linewidth' instead of 'size'
+    # Draw state border
+    geom_sf(data = ca_outline, 
+            fill = NA, 
+            color = "black", 
+            linewidth = 0.5) +
+    # Draw data centers
+    geom_sf(data = data_centers_cleaned %>% filter(state_abb == "CA"), 
+            color = "firebrick", 
+            size = 2, 
+            alpha = 0.7) +
+    labs(title = "Data Centers within California Census Tracts",
+         caption = "Data: Census Bureau & IM3 Atlas") +
+    theme_void()
+  
+  # Assign to object and then print (helps avoid the 'depth' error in some R sessions)
+  print(ca_map)
+}
 
 # 2. Texas Map
 if (!is.null(tx_outline)) {
@@ -334,6 +358,9 @@ for (state_code in names(states)) {
 TX_map_data <- TX_shapefile %>%
   left_join(eji_needed_states %>% filter(STATEABBR == "TX"), by = c("GEOID" = "GEOID_2020"))
 
+CA_map_data <- CA_shapefile %>%
+  left_join(eji_needed_states %>% filter(STATEABBR == "CA"), by = c("GEOID" = "GEOID_2020"))
+
 VA_map_data <- VA_shapefile %>%
   left_join(eji_needed_states %>% filter(STATEABBR == "VA"), by = c("GEOID" = "GEOID_2020"))
 
@@ -342,7 +369,7 @@ modules <- c("RPL_SVM" = "Social Vulnerability",
              "RPL_EBM" = "Environmental Burden", 
              "RPL_CBM" = "Climate Vulnerability")
 
-states_list <- list("TX" = TX_map_data, "VA" = VA_map_data)
+states_list <- list("TX" = TX_map_data, "VA" = VA_map_data, "CA" = CA_map_data)
 
 # 3. Generate Zoomed Maps
 for (state_code in names(states_list)) {
@@ -516,7 +543,8 @@ print(dallas_map)
 # 1. Define the focus regions and modules
 focus_areas <- list(
   "VA" = c("Loudoun County", "Prince William County", "Fairfax County", "Henrico County"),
-  "TX" = c("Bexar County", "Dallas County", "Travis County", "Ellis County", "Collin County")
+  "TX" = c("Bexar County", "Dallas County", "Travis County", "Ellis County", "Collin County"),
+  "CA" = c("Santa Clara County", "Los Angeles County")
 )
 
 modules <- c(
@@ -527,7 +555,7 @@ modules <- c(
 
 # 2. Ensure data is joined (assuming TX_joined and VA_joined exist from previous steps)
 # If not yet joined, run the join code from the previous response first.
-state_data_list <- list("TX" = TX_map_data, "VA" = VA_map_data)
+state_data_list <- list("TX" = TX_map_data, "VA" = VA_map_data, "CA" = CA_map_data)
 
 # 3. The Nested Loop
 for (state_code in names(focus_areas)) {
