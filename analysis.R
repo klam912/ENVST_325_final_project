@@ -5,8 +5,8 @@ library(viridis)
 # --- 1. DATA IMPORT & CLEANING ---
 
 # Load datasets
-data_centers <- read.csv("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/im3_open_source_data_center_atlas_v2026.02.09/im3_open_source_data_center_atlas_v2026.02.09.csv")
-eji <- read.csv("Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/EJI_2024_United_States_CSV/EJI_2024_United_States.csv")
+data_centers <- read.csv("~/Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/im3_open_source_data_center_atlas_v2026.02.09/im3_open_source_data_center_atlas_v2026.02.09.csv")
+eji <- read.csv("~/Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/EJI_2024_United_States_CSV/EJI_2024_United_States.csv")
 
 # Filter for relevant states and clean EJI IDs
 eji_needed <- eji %>%
@@ -18,7 +18,7 @@ process_state_data <- function(state_abb, shp_path) {
   # Load shapefile
   shapefile <- st_read(shp_path) %>% mutate(GEOID = trimws(as.character(GEOID)))
   
-  # CRITICAL: Fix California GEOIDs (remove leading zero to match EJI CSV format)
+  # Fix California GEOIDs (remove leading zero to match EJI CSV format)
   if(state_abb == "CA") {
     shapefile <- shapefile %>% mutate(GEOID = sub("^0", "", GEOID))
   }
@@ -36,9 +36,9 @@ process_state_data <- function(state_abb, shp_path) {
 }
 
 # Process each state
-ca_data <- process_state_data("CA", "Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_06_tract/tl_2020_06_tract.shp")
-tx_data <- process_state_data("TX", "Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_48_tract/tl_2020_48_tract.shp")
-va_data <- process_state_data("VA", "Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_51_tract/tl_2020_51_tract.shp")
+ca_data <- process_state_data("CA", "~/Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_06_tract/tl_2020_06_tract.shp")
+tx_data <- process_state_data("TX", "~/Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_48_tract/tl_2020_48_tract.shp")
+va_data <- process_state_data("VA", "~/Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/tl_2020_51_tract/tl_2020_51_tract.shp")
 
 # Combine data center points and join with EJI modules
 data_centers_combined <- bind_rows(ca_data$points, tx_data$points, va_data$points) %>%
@@ -47,7 +47,7 @@ data_centers_combined <- bind_rows(ca_data$points, tx_data$points, va_data$point
 # Final Data Cleaning: Replace -999/9 with NA and filter relevant columns
 data_centers_cleaned <- data_centers_combined %>%
   mutate(across(where(is.atomic), ~ ifelse(.x %in% c("-999", -999, "9", 9), NA, .x))) %>%
-  select(state_abb, county, operator, name, sqft, GEOID, RPL_SVM, RPL_EBM, RPL_CBM, geometry)
+  select(state_abb, county, operator, name, sqft, type, GEOID, RPL_SVM, RPL_EBM, RPL_CBM, geometry)
 
 # Join EJI data back to the full shapefiles for background heatmaps
 CA_map_data <- ca_data$shape %>% left_join(eji_needed, by = c("GEOID" = "GEOID_2020"))
@@ -82,7 +82,7 @@ generate_eji_map <- function(map_data, dc_data, state_code, mod_code, region_nam
     theme_void()
 }
 
-# --- 3. EXECUTION: GENERATE & SAVE 27 REGIONAL MAPS ---
+# --- 3. CREATE HEATMAPS ---
 
 focus_areas <- list(
   "VA" = c("Loudoun County", "Prince William County", "Fairfax County", "Henrico County"),
@@ -92,13 +92,13 @@ focus_areas <- list(
 
 state_maps <- list("CA" = CA_map_data, "TX" = TX_map_data, "VA" = VA_map_data)
 
-for (st in names(focus_areas)) {
-  for (co in focus_areas[[st]]) {
-    for (mod in c("RPL_SVM", "RPL_EBM", "RPL_CBM")) {
-      p <- generate_eji_map(state_maps[[st]], data_centers_cleaned, st, mod, co)
-      
-      file_path <- sprintf("Desktop/ENVST325/final_project/ENVST_325_final_project/viz/Map_%s_%s_%s.png", st, gsub(" ", "_", co), mod)
-      ggsave(file_path, plot = p, width = 8, height = 6, bg = "white")
-    }
-  }
-}
+# for (st in names(focus_areas)) {
+#   for (co in focus_areas[[st]]) {
+#     for (mod in c("RPL_SVM", "RPL_EBM", "RPL_CBM")) {
+#       p <- generate_eji_map(state_maps[[st]], data_centers_cleaned, st, mod, co)
+#       
+#       file_path <- sprintf("Desktop/ENVST325/final_project/ENVST_325_final_project/viz/Map_%s_%s_%s.png", st, gsub(" ", "_", co), mod)
+#       ggsave(file_path, plot = p, width = 8, height = 6, bg = "white")
+#     }
+#   }
+# }
