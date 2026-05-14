@@ -6,11 +6,11 @@ library(viridis)
 library(htmltools)
 library(scales)
 
-# --- 1. SOURCE DATA ANALYSIS ---
+# Create data needed for the dashboard ----
 # This ensures CA_map_data, TX_map_data, VA_map_data, and data_centers_cleaned are loaded
 source("~/Desktop/ENVST325/final_project/ENVST_325_final_project/analysis.R") 
 
-# --- 2. DEFINE GRANULAR VARIABLES LIST ---
+# Gather variables for dashboard ----
 # Grouped by category for a cleaner dropdown menu in the UI
 granular_vars <- list(
   "Overall Modules" = c(
@@ -60,27 +60,26 @@ granular_vars <- list(
   )
 )
 
-# --- 3. DATA PREPARATION FOR DASHBOARD ---
+# Data preparation for dashboard ----
 
-# 1. Standardize the Map Polygons to WGS84 (EPSG 4326)
+# Standardize map polygons to WGS84 (EPSG 4326)
 all_states_map <- bind_rows(
   CA_map_data %>% mutate(STATE_ABB = "CA"),
   TX_map_data %>% mutate(STATE_ABB = "TX"),
   VA_map_data %>% mutate(STATE_ABB = "VA")
 ) %>% st_transform(4326) 
 
-# 2. IMPORTANT: Standardize Data Center Points to the SAME CRS (4326)
-# This prevents the 'st_crs(x) == st_crs(y) is not TRUE' error
+# Standardize data center points to the same CRS (4326)
 dcs_for_filter <- data_centers_cleaned %>% st_transform(4326)
 
-# 3. Now run the filter (Both objects are now 4326)
+# Aggregate by state and counties
 counties_with_dcs <- all_states_map %>%
   st_filter(dcs_for_filter, .predicate = st_intersects) %>%
   st_drop_geometry() %>%
   select(STATE_ABB, COUNTY) %>%
   distinct()
 
-# 4. Prepare Interactive Tooltips (using the already transformed dcs_for_filter)
+# Prepare interactive tooltips
 data_centers_interact <- dcs_for_filter %>%
   mutate(
     lng = st_coordinates(.)[,1],
@@ -95,7 +94,7 @@ data_centers_interact <- dcs_for_filter %>%
     ) %>% lapply(htmltools::HTML)
   )
 
-# --- 4. SHINY UI ---
+# Shiny UI ----
 ui <- fluidPage(
   theme = bslib::bs_theme(bootswatch = "flatly"),
   titlePanel("Data Center Environmental Justice Index Explorer"),
@@ -116,7 +115,7 @@ ui <- fluidPage(
   )
 )
 
-# --- 5. SHINY SERVER ---
+# Shiny server ----
 server <- function(input, output, session) {
   
   # Dynamic UI: Only show counties with data centers for the selected state
@@ -134,7 +133,6 @@ server <- function(input, output, session) {
     req(input$state, input$variable, input$county)
     
     # 1. Filter initial state data
-    # We use 'plot_map' and 'plot_dcs' as our consistent variable names
     plot_map <- all_states_map %>% filter(STATE_ABB == input$state)
     plot_dcs <- data_centers_interact %>% filter(state_abb == input$state)
     
@@ -148,11 +146,9 @@ server <- function(input, output, session) {
     # 3. Calculate bounding box for the view
     bounds <- st_bbox(plot_map)
     
-    # 4. Define Palette (Scale fixed 0 to 1)
-    # Ensure this uses 'plot_map' or 'all_states_map', NOT 'state_map'
+    # 4. Define palette (Scale fixed 0 to 1)
     pal <- colorNumeric(palette = "magma", domain = c(0, 1), na.color = "#D3D3D3")
     
-    # 5. Build the Leaflet Map
     # 5. Build the Leaflet Map
     leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
@@ -180,12 +176,11 @@ server <- function(input, output, session) {
         label = ~tooltip
       ) %>%
       addLegend(
-        # We pass the palette reversed here
+        # Make the legend have 0 at the bottom and 1 at the top for readability
         pal = colorNumeric(palette = "magma", domain = c(0, 1), reverse = TRUE), 
         values = c(0, 1), 
         position = "bottomright", 
         title = "Percentile",
-        # We sort the numbers 1 to 0
         labFormat = labelFormat(transform = function(x) sort(x, decreasing = TRUE))
       )
   })

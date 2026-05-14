@@ -2,7 +2,7 @@ library(tidyverse)
 library(sf)
 library(viridis)
 
-# --- 1. DATA IMPORT & CLEANING ---
+# Data processing ----
 
 # Load datasets
 data_centers <- read.csv("~/Desktop/ENVST325/final_project/ENVST_325_final_project/data_repo/im3_open_source_data_center_atlas_v2026.02.09/im3_open_source_data_center_atlas_v2026.02.09.csv")
@@ -18,7 +18,7 @@ process_state_data <- function(state_abb, shp_path) {
   # Load shapefile
   shapefile <- st_read(shp_path) %>% mutate(GEOID = trimws(as.character(GEOID)))
   
-  # Fix California GEOIDs (remove leading zero to match EJI CSV format)
+  # Fix California GEOIDs (remove leading zero to match EJI's GEOID format)
   if(state_abb == "CA") {
     shapefile <- shapefile %>% mutate(GEOID = sub("^0", "", GEOID))
   }
@@ -29,7 +29,7 @@ process_state_data <- function(state_abb, shp_path) {
     st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
     st_transform(crs = st_crs(shapefile))
   
-  # Spatial join: Assign tract GEOID to each data center
+  # Assign tract GEOID to each data center
   points_final <- st_join(points, shapefile)
   
   return(list(shape = shapefile, points = points_final))
@@ -44,19 +44,19 @@ va_data <- process_state_data("VA", "~/Desktop/ENVST325/final_project/ENVST_325_
 data_centers_combined <- bind_rows(ca_data$points, tx_data$points, va_data$points) %>%
   left_join(eji_needed, by = c("GEOID" = "GEOID_2020"))
 
-# Final Data Cleaning: Replace -999/9 with NA and filter relevant columns
+# Replace -999/9 with NA and retrieve relevant columns
 data_centers_cleaned <- data_centers_combined %>%
   mutate(across(where(is.atomic), ~ ifelse(.x %in% c("-999", -999, "9", 9), NA, .x))) %>%
   select(state_abb, county, operator, name, sqft, type, GEOID, RPL_SVM, RPL_EBM, RPL_CBM, geometry)
 
-# Join EJI data back to the full shapefiles for background heatmaps
+# Join EJI data back to the full shapefiles for for final data
 CA_map_data <- ca_data$shape %>% left_join(eji_needed, by = c("GEOID" = "GEOID_2020"))
 TX_map_data <- tx_data$shape %>% left_join(eji_needed, by = c("GEOID" = "GEOID_2020"))
 VA_map_data <- va_data$shape %>% left_join(eji_needed, by = c("GEOID" = "GEOID_2020"))
 
-# --- 2. MAPPING FUNCTIONS ---
+# Visualization ----
 
-# Core function to generate heatmaps (supports both State-wide and County-level)
+# Generate heatmaps at state and county levels
 generate_eji_map <- function(map_data, dc_data, state_code, mod_code, region_name = NULL) {
   
   mod_labels <- c("RPL_SVM" = "Social Vulnerability", "RPL_EBM" = "Environmental Burden", "RPL_CBM" = "Climate Vulnerability")
@@ -66,7 +66,7 @@ generate_eji_map <- function(map_data, dc_data, state_code, mod_code, region_nam
     focus_tracts <- map_data %>% filter(tolower(COUNTY) == tolower(region_name))
     bbox <- st_bbox(focus_tracts)
     points_to_plot <- dc_data %>% filter(state_abb == state_code) %>% st_crop(bbox)
-    title_text <- paste(region_name, "County:", mod_labels[mod_code])
+    title_text <- paste(region_name, ":", mod_labels[mod_code])
   } else {
     bbox <- st_bbox(map_data)
     points_to_plot <- dc_data %>% filter(state_abb == state_code)
@@ -82,8 +82,7 @@ generate_eji_map <- function(map_data, dc_data, state_code, mod_code, region_nam
     theme_void()
 }
 
-# --- 3. CREATE HEATMAPS ---
-
+# Create heatmaps for counties with high volume of data center presence
 focus_areas <- list(
   "VA" = c("Loudoun County", "Prince William County", "Fairfax County", "Henrico County"),
   "TX" = c("Bexar County", "Dallas County", "Travis County", "Ellis County", "Collin County"),
@@ -92,13 +91,14 @@ focus_areas <- list(
 
 state_maps <- list("CA" = CA_map_data, "TX" = TX_map_data, "VA" = VA_map_data)
 
-# for (st in names(focus_areas)) {
-#   for (co in focus_areas[[st]]) {
-#     for (mod in c("RPL_SVM", "RPL_EBM", "RPL_CBM")) {
-#       p <- generate_eji_map(state_maps[[st]], data_centers_cleaned, st, mod, co)
-#       
-#       file_path <- sprintf("Desktop/ENVST325/final_project/ENVST_325_final_project/viz/Map_%s_%s_%s.png", st, gsub(" ", "_", co), mod)
-#       ggsave(file_path, plot = p, width = 8, height = 6, bg = "white")
-#     }
-#   }
-# }
+# Iterate through each focus area and create 3 heatmaps and save them in folder
+for (st in names(focus_areas)) {
+  for (co in focus_areas[[st]]) {
+    for (mod in c("RPL_SVM", "RPL_EBM", "RPL_CBM")) {
+      p <- generate_eji_map(state_maps[[st]], data_centers_cleaned, st, mod, co)
+
+      file_path <- sprintf("Desktop/ENVST325/final_project/ENVST_325_final_project/viz/Map_%s_%s_%s.png", st, gsub(" ", "_", co), mod)
+      ggsave(file_path, plot = p, width = 8, height = 6, bg = "white")
+    }
+  }
+}
